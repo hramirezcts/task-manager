@@ -42,6 +42,7 @@ export const uid = () => crypto.randomUUID()
 export const today = () => new Date().toLocaleDateString('en-CA')
 
 export let sharedDb: any = null
+export let isAdmin = false
 
 /* ---- Backend en claude.ai (Artifact): un documento privado por registro ---- */
 type Rec = Record<string, unknown>
@@ -54,6 +55,7 @@ async function remote(): Promise<{ data: Data; api: Remote } | null> {
   const [db, user] = await Promise.race([Promise.all([c.use('db'), c.use('user')]), timeout.then(() => [null, null])]) as any[]
   if (!db || !user) return null
   sharedDb = db
+  try { isAdmin = !!((await user.isOwner()) || (await user.canEdit())) } catch { isAdmin = false }
   const col = db.collection('data/users/' + (await user.id()))
   const snap = await col.get()
   const data: Data = { tasks: [], notes: [], processes: [], journal: [] }

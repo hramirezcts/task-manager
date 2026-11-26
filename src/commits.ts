@@ -1,8 +1,9 @@
 export interface Commit {
   sha: string; author: string; date: string; subject: string; body: string
   type: string; scope: string; status: string; branches: string[]
+  module?: string; process?: string
 }
-export interface CommitSet { repo: string; syncedAt: string; commits: Commit[] }
+export interface CommitSet { repo: string; syncedAt: string; commits: Commit[]; catalog?: { name: string; processes: string[] }[] }
 
 export const ENVS = ['PROD', 'main', 'QA', 'DEV'] as const
 export const TYPES: Record<string, string> = {

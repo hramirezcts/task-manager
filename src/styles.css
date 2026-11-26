@@ -103,3 +103,9 @@ table.commits{width:100%;border-collapse:collapse;font-size:13px}
 .cmd{margin:0;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:10px 12px;font:12px/1.6 ui-monospace,Consolas,monospace;overflow-x:auto;user-select:all}
 .btnlink{border:1px solid var(--line);border-radius:6px;padding:7px 12px;color:var(--text);text-decoration:none;font-size:14px}.btnlink:hover{background:var(--hover)}
 .th{border:none;background:none;padding:0;font:inherit;color:inherit;cursor:pointer}.th:hover{color:var(--text);background:none}.filters select{max-width:200px}
+.modcell{font-weight:500;font-size:13px}.danger-box{border-color:var(--red)}.danger-solid{background:var(--red);border-color:var(--red);color:var(--bg)}.danger-solid:hover{background:var(--red);opacity:.9}.m-foot .danger{align-self:center}
+.chk{width:34px;padding-right:0!important}.commits tr.picked{background:var(--hover)}
+.bulkbar{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;padding:10px 14px;margin-bottom:10px;border:1px solid var(--text);border-radius:8px;background:var(--bg)}
+.bulklist{margin:0;padding-left:22px;display:flex;flex-direction:column;gap:8px;max-height:280px;overflow:auto}
+.bulklist li{display:grid;grid-template-columns:auto 1fr;column-gap:10px}.bulklist code{font-family:ui-monospace,Consolas,monospace;color:var(--muted)}
+.bulklist small{grid-column:2;color:var(--muted);font-size:12px}
