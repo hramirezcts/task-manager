@@ -7,19 +7,20 @@ const VIEWS: [View, string][] = [['dia', 'Mi día'], ['tareas', 'Tareas'], ['not
 const fmt = (d: string) => d ? new Date(d + 'T00:00').toLocaleDateString('es', { day: '2-digit', month: 'short' }) : ''
 
 export default function App() {
-  const { data, update, replace } = useData()
+  const { data, mode, update, replace } = useData()
   const [view, setView] = useState<View>('dia')
   if (!data) return null
   const open = data.tasks.filter(t => t.status !== 'hecha').length
 
-  const exportar = () => {
+  const exportar = async () => {
+    const json = JSON.stringify(data, null, 2), filename = `respaldo-tareas-${today()}.json`
+    const dl = await window.claude?.use('downloads').catch(() => null)
+    if (dl) return dl.save({ filename, data: json }).catch(() => {})
     const a = document.createElement('a')
-    a.href = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }))
-    a.download = `respaldo-tareas-${today()}.json`; a.click()
+    a.href = URL.createObjectURL(new Blob([json], { type: 'application/json' })); a.download = filename; a.click()
   }
-  const importar = (f?: File) => f?.text().then(t => {
-    if (confirm('Esto reemplaza todos los datos actuales. ¿Continuar?')) replace(JSON.parse(t))
-  })
+  const [pending, setPending] = useState<Data | null>(null)
+  const importar = (f?: File) => f?.text().then(t => { try { setPending(JSON.parse(t)) } catch { /* archivo inválido */ } })
 
   return (
     <div className="app">
@@ -34,7 +35,10 @@ export default function App() {
           <button className="link" onClick={exportar}>Exportar respaldo</button>
           <label className="link">Importar respaldo
             <input type="file" accept=".json" hidden onChange={e => importar(e.target.files?.[0])} /></label>
-          <small>v{__APP_VERSION__}</small>
+          {pending && <div className="confirmbox">Reemplazar todos los datos con el respaldo?
+            <span><button className="danger" onClick={() => { replace(pending); setPending(null) }}>Reemplazar</button>
+            <button onClick={() => setPending(null)}>Cancelar</button></span></div>}
+          <small>v{__APP_VERSION__} · {mode === 'nube' ? 'guardado en tu cuenta' : 'guardado en este equipo'}</small>
         </div>
       </aside>
       <main>
@@ -162,7 +166,7 @@ function TaskList({ tasks, data, update, empty }: { tasks: Task[]; data: Data; u
           <select value={t.processId} onChange={e => set(t.id, { processId: e.target.value })}>
             <option value="">Sin proceso</option>{data.processes.map(x => <option key={x.id} value={x.id}>{x.name}</option>)}
           </select>
-          <button className="danger" onClick={() => confirm('¿Eliminar tarea?') && update(d => ({ ...d, tasks: d.tasks.filter(x => x.id !== t.id) }))}>Eliminar</button>
+          <Confirm label="Eliminar" onYes={() => update(d => ({ ...d, tasks: d.tasks.filter(x => x.id !== t.id) }))} />
         </div>
         {p && p.policies.filter(x => x.active).length > 0 && <div className="policies-hint">
           <b>Políticas aplicables ({p.name})</b>
@@ -196,7 +200,7 @@ function Notes({ data, update }: { data: Data; update: Up }) {
         <input className="big" value={note.title} onChange={e => set({ title: e.target.value })} />
         <input placeholder="Etiquetas (separadas por coma)" value={note.tags} onChange={e => set({ tags: e.target.value })} />
         <textarea value={note.body} placeholder="Escribe…" onChange={e => set({ body: e.target.value })} />
-        <button className="danger" onClick={() => { if (confirm('¿Eliminar nota?')) { update(d => ({ ...d, notes: d.notes.filter(n => n.id !== sel) })); setSel(null) } }}>Eliminar nota</button>
+        <Confirm label="Eliminar nota" onYes={() => { update(d => ({ ...d, notes: d.notes.filter(n => n.id !== sel) })); setSel(null) }} />
       </div> : <p className="empty">Selecciona o crea una nota.</p>}
     </div>
   </>
@@ -249,7 +253,7 @@ function Processes({ data, update }: { data: Data; update: Up }) {
 
         <h3>Tareas del proceso</h3>
         <TaskList tasks={tasksOf(p.id)} data={data} update={update} empty="Sin tareas vinculadas." />
-        <button className="danger" onClick={() => { if (confirm('¿Eliminar proceso? Las tareas quedan sin proceso.')) { update(d => ({ ...d, processes: d.processes.filter(x => x.id !== sel), tasks: d.tasks.map(t => t.processId === sel ? { ...t, processId: '' } : t) })); setSel(null) } }}>Eliminar proceso</button>
+        <Confirm label="Eliminar proceso" onYes={() => { update(d => ({ ...d, processes: d.processes.filter(x => x.id !== sel), tasks: d.tasks.map(t => t.processId === sel ? { ...t, processId: '' } : t) })); setSel(null) }} />
       </div> : <p className="empty">Selecciona o crea un proceso.</p>}
     </div>
   </>
@@ -262,3 +266,10 @@ const Kpi = ({ label, value, warn }: { label: string; value: number; warn?: bool
   <div className={`kpi ${warn ? 'warn' : ''}`}><span>{label}</span><b>{value}</b></div>
 const Section = ({ title, children }: { title: string; children: React.ReactNode }) =>
   <section><h2>{title}</h2>{children}</section>
+
+function Confirm({ label, onYes }: { label: string; onYes: () => void }) {
+  const [ask, setAsk] = useState(false)
+  return ask
+    ? <span className="inline"><button className="danger" onClick={onYes}>Confirmar</button><button onClick={() => setAsk(false)}>Cancelar</button></span>
+    : <button className="danger" onClick={() => setAsk(true)}>{label}</button>
+}
