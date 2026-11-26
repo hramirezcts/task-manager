@@ -18,7 +18,12 @@ const git = (...a) => execFileSync('git', ['-C', repo, ...a], { encoding: 'utf8'
 const ENVS = ['PROD', 'main', 'QA', 'DEV']
 try { git('fetch', '--quiet', 'origin') } catch { console.warn('fetch falló; uso refs locales') }
 const sets = Object.fromEntries(ENVS.map(e => {
-  try { return [e, new Set(git('rev-list', '--max-count=5000', `origin/${e}`).split('\n'))] } catch { return [e, new Set()] }
+  try {
+    const set = new Set(git('rev-list', '--max-count=5000', `origin/${e}`).split('\n'))
+    // commits llevados con cherry-pick -x cuentan como presentes por su SHA original
+    for (const m of git('log', '--max-count=5000', '--format=%b', `origin/${e}`).matchAll(/cherry picked from commit ([0-9a-f]{40})/g)) set.add(m[1])
+    return [e, set]
+  } catch { return [e, new Set()] }
 }))
 const SEP = '\x1e', F = '\x1f'
 const raw = git('log', '--branches', '--remotes', '--no-merges', `--author=${author}`, `-n`, n, `--format=%H${F}%an${F}%aI${F}%s${F}%b${SEP}`)

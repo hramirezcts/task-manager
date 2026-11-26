@@ -20,7 +20,7 @@ export function CommitsView() {
   const [open, setOpen] = useState<string | null>(null)
   const [mod, setMod] = useState(''), [au, setAu] = useState(''), [pro, setPro] = useState('')
   const [sort, setSort] = useState<{ key: SortKey; dir: 'asc' | 'desc' }>({ key: 'date', dir: 'desc' })
-  const [picked, setPicked] = useState<Set<string>>(new Set()), [bulk, setBulk] = useState<'QA' | 'PROD' | null>(null)
+  const [picked, setPicked] = useState<Set<string>>(new Set()), [bulk, setBulk] = useState<Env | null>(null)
 
   const live = async (c = cfg) => {
     if (!c.token) return
@@ -106,8 +106,7 @@ export function CommitsView() {
       {admin && picked.size > 0 && <div className="bulkbar">
         <span><b>{picked.size}</b> seleccionado(s)</span>
         <span className="inline">
-          <button onClick={() => setBulk('QA')}>Aplicar en QA</button>
-          <button className="prod" onClick={() => setBulk('PROD')}>Aplicar en Producción</button>
+          {PIPE.map(e => <button key={e} className={e === 'PROD' ? 'prod' : ''} onClick={() => setBulk(e)}>Pasar a {STATUS_LABEL[e]}</button>)}
           <button className="link" onClick={() => setPicked(new Set())}>Quitar selección</button>
         </span>
       </div>}
@@ -164,7 +163,16 @@ export function ThemeSwitch() {
 }
 
 /* ---- Detalle del commit ---- */
-const PIPE = ['DEV', 'QA', 'main', 'PROD'] as const
+/** Secuencia obligatoria de ambientes. Un commit solo avanza al siguiente. */
+const PIPE = ['DEV', 'QA', 'PROD'] as const
+type Env = typeof PIPE[number]
+const reachedIdx = (c: Commit) => Math.max(-1, ...c.branches.map(b => PIPE.indexOf(b as Env)))
+const nextEnv = (c: Commit): Env | null => PIPE[reachedIdx(c) + 1] ?? null
+const blockReason = (c: Commit, env: Env) => {
+  const i = PIPE.indexOf(env), r = reachedIdx(c)
+  if (r >= i) return `ya está en ${STATUS_LABEL[env]}`
+  return `primero debe pasar por ${STATUS_LABEL[PIPE[r + 1]]}`
+}
 function CommitModal({ c, repo, onClose }: { c: Commit; repo: string; onClose: () => void }) {
   const [copied, setCopied] = useState(false)
   useEffect(() => {
@@ -174,14 +182,15 @@ function CommitModal({ c, repo, onClose }: { c: Commit; repo: string; onClose: (
   const copy = () => navigator.clipboard?.writeText(c.sha).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500) }).catch(() => {})
   const url = `https://github.com/${repo}/commit/${c.sha}`
   const [deploy, setDeploy] = useState(false)
-  const [revert, setRevert] = useState(false), [revEnv, setRevEnv] = useState(c.branches[0] ?? 'DEV')
+  const [revert, setRevert] = useState(false), [revEnv, setRevEnv] = useState(c.branches.find(b => (PIPE as readonly string[]).includes(b)) ?? 'DEV')
   const admin = isAdmin || !sharedDb
   const revCmds = `git fetch origin
 git switch ${revEnv}
 git pull --ff-only origin ${revEnv}
 git revert --no-edit ${c.sha}
 git push origin ${revEnv}`
-  const cmds = `git fetch origin\ngit switch PROD\ngit pull --ff-only origin PROD\ngit cherry-pick ${c.sha}\ngit push origin PROD`
+  const next = nextEnv(c)
+  const cmds = next ? `git fetch origin\ngit switch ${next}\ngit pull --ff-only origin ${next}\ngit cherry-pick ${c.sha}\ngit push origin ${next}` : ''
   return <div className="overlay" onClick={onClose}>
     <div className="modal" role="dialog" aria-modal="true" aria-labelledby="cm-title" onClick={e => e.stopPropagation()}>
       <div className="m-head">
@@ -214,9 +223,9 @@ git push origin ${revEnv}`
       </section>
 
       {deploy && <section className="m-sec deploy">
-        <h3>Pasar a producción</h3>
-        <p className="hint">Aplica solo este commit sobre la rama PROD. Si hay conflicto, se cancela sin publicar nada. <a href={`https://github.com/${repo}/compare/PROD...${c.sha}`} target="_blank" rel="noopener noreferrer">Comparar con PROD</a></p>
-        <ApplyAction repo={repo} env="PROD" op="aplicar" shas={[c.sha]} commands={cmds} />
+        <h3>Pasar a {next && STATUS_LABEL[next]}</h3>
+        <p className="hint">Aplica solo este commit sobre {next && STATUS_LABEL[next]}, el siguiente paso de la secuencia DEV → QA → Producción. Si hay conflicto, se cancela sin publicar nada. <a href={`https://github.com/${repo}/compare/${next}...${c.sha}`} target="_blank" rel="noopener noreferrer">Comparar con {next}</a></p>
+        {next && <ApplyAction repo={repo} env={next} op="aplicar" shas={[c.sha]} commands={cmds} />}
         <button className="link" onClick={() => setDeploy(false)}>Cancelar</button>
       </section>}
 
@@ -224,7 +233,7 @@ git push origin ${revEnv}`
         <h3>Reversar cambio</h3>
         <p className="hint">Crea un commit nuevo que deshace este cambio en el ambiente elegido. No borra historial.</p>
         <label className="inline">Ambiente
-          <select id="rev-env" value={revEnv} onChange={e => setRevEnv(e.target.value)}>{c.branches.map(b => <option key={b} value={b}>{STATUS_LABEL[b]}</option>)}</select>
+          <select id="rev-env" value={revEnv} onChange={e => setRevEnv(e.target.value)}>{c.branches.filter(b => (PIPE as readonly string[]).includes(b)).map(b => <option key={b} value={b}>{STATUS_LABEL[b]}</option>)}</select>
         </label>
         <ApplyAction key={revEnv} repo={repo} env={revEnv} op="reversar" shas={[c.sha]} commands={revCmds} />
         <button className="link" onClick={() => setRevert(false)}>Cancelar</button>
@@ -233,8 +242,8 @@ git push origin ${revEnv}`
       <div className="m-foot">
         <a href={url} target="_blank" rel="noopener noreferrer">Ver en GitHub</a>
         <span className="inline">
-          {admin && c.branches.length > 0 && !revert && <button className="danger" onClick={() => { setRevert(true); setDeploy(false) }}>Reversar</button>}
-          {admin && c.status !== 'PROD' && !deploy && <button className="prod" onClick={() => { setDeploy(true); setRevert(false) }}>Pasar a producción</button>}
+          {admin && c.branches.some(b => (PIPE as readonly string[]).includes(b)) && !revert && <button className="danger" onClick={() => { setRevert(true); setDeploy(false) }}>Reversar</button>}
+          {admin && next && !deploy && <button className={next === 'PROD' ? 'prod' : 'primary'} onClick={() => { setDeploy(true); setRevert(false) }}>Pasar a {STATUS_LABEL[next]}</button>}
           <button className={c.status === 'PROD' ? 'primary' : ''} onClick={onClose}>Cerrar</button>
         </span>
       </div>
@@ -243,29 +252,32 @@ git push origin ${revEnv}`
 }
 
 /* ---- Aplicación masiva a QA o Producción ---- */
-function BulkModal({ env, repo, commits, onClose }: { env: 'QA' | 'PROD'; repo: string; commits: Commit[]; onClose: () => void }) {
+function BulkModal({ env, repo, commits, onClose }: { env: Env; repo: string; commits: Commit[]; onClose: () => void }) {
   useEffect(() => {
     const k = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
     window.addEventListener('keydown', k); return () => window.removeEventListener('keydown', k)
   }, [onClose])
   const ordered = [...commits].sort((a, b) => a.date.localeCompare(b.date))
-  const already = ordered.filter(c => c.branches.includes(env))
-  const todo = ordered.filter(c => !c.branches.includes(env))
+  const todo = ordered.filter(c => nextEnv(c) === env)
+  const already = ordered.filter(c => nextEnv(c) !== env)
   const label = STATUS_LABEL[env]
   const cmds = ['git fetch origin', `git switch ${env}`, `git pull --ff-only origin ${env}`,
     `git cherry-pick ${todo.map(c => c.sha).join(' ')}`, `git push origin ${env}`].join('\n')
   return <div className="overlay" onClick={onClose}>
     <div className="modal" role="dialog" aria-modal="true" aria-labelledby="bm-title" onClick={e => e.stopPropagation()}>
       <div className="m-head">
-        <div><div className="m-eyebrow">Aplicación masiva</div><h2 id="bm-title">Aplicar {todo.length} commit(s) en {label}</h2></div>
+        <div><div className="m-eyebrow">Aplicación masiva</div><h2 id="bm-title">Pasar {todo.length} commit(s) a {label}</h2></div>
         <button className="icon" aria-label="Cerrar" onClick={onClose}>×</button>
       </div>
       <section className="m-sec">
         <h3>Se aplicarán en este orden (del más antiguo al más reciente)</h3>
         {todo.length ? <ol className="bulklist">{todo.map(c => <li key={c.sha}>
           <code>{c.sha.slice(0, 7)}</code><span>{c.subject}</span><small>{modOf(c)} · {when(c.date)}</small></li>)}</ol>
-          : <p className="hint">Todos los seleccionados ya están en {label}.</p>}
-        {already.length > 0 && <p className="hint">{already.length} seleccionado(s) ya están en {label} y se omiten.</p>}
+          : <p className="hint">Ninguno de los seleccionados puede pasar a {label} ahora.</p>}
+        {already.length > 0 && <div className="skipped">
+          <b>{already.length} se omiten para respetar la secuencia DEV → QA → Producción:</b>
+          <ul>{already.map(c => <li key={c.sha}><code>{c.sha.slice(0, 7)}</code> {c.subject} — <span>{blockReason(c, env)}</span></li>)}</ul>
+        </div>}
       </section>
       {todo.length > 0 && <section className="m-sec deploy">
         <h3>Aplicar</h3>
