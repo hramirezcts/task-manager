@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react'
 import { sharedDb } from './store'
-import { fetchLive, TYPES, ENVS, type CommitSet } from './commits'
+import { fetchLive, TYPES, ENVS, type CommitSet, type Commit } from './commits'
 
 const LS = 'tm-github'
 const read = () => { try { return JSON.parse(localStorage.getItem(LS) || '{}') } catch { return {} } }
 const write = (v: object) => { try { localStorage.setItem(LS, JSON.stringify(v)) } catch { /* sin almacenamiento */ } }
 const STATUS_LABEL: Record<string, string> = { PROD: 'Producción', main: 'main', QA: 'QA', DEV: 'DEV', Rama: 'Solo en rama' }
 const STATES = [...ENVS, 'Rama']
+type SortKey = 'date' | 'name'
 const when = (d: string) => new Date(d).toLocaleString('es', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
 
 export function CommitsView() {
@@ -15,6 +16,8 @@ export function CommitsView() {
   const [cfg, setCfg] = useState<{ token?: string; author?: string }>(read)
   const [q, setQ] = useState(''), [st, setSt] = useState(''), [ty, setTy] = useState('')
   const [open, setOpen] = useState<string | null>(null)
+  const [mod, setMod] = useState(''), [au, setAu] = useState('')
+  const [sort, setSort] = useState<{ key: SortKey; dir: 'asc' | 'desc' }>({ key: 'date', dir: 'desc' })
 
   const live = async (c = cfg) => {
     if (!c.token) return
@@ -33,9 +36,23 @@ export function CommitsView() {
 
   const all = set?.commits ?? []
   const list = all.filter(c => (!st || c.status === st) && (!ty || c.type === ty)
+    && (!mod || (c.scope || '—') === mod) && (!au || c.author === au)
     && (!q || (c.subject + c.body + c.scope + c.sha).toLowerCase().includes(q.toLowerCase())))
+    .sort((a, b) => {
+      const r = sort.key === 'name' ? a.subject.localeCompare(b.subject, 'es', { sensitivity: 'base' }) : a.date.localeCompare(b.date)
+      return sort.dir === 'asc' ? r : -r
+    })
   const count = (s: string) => all.filter(c => c.status === s).length
-  const types = [...new Set(all.map(c => c.type))]
+  const uniq = (xs: string[]) => [...new Set(xs)].sort((a, b) => a.localeCompare(b, 'es'))
+  const types = uniq(all.map(c => c.type))
+  const modules = uniq(all.map(c => c.scope || '—'))
+  const authors = uniq(all.map(c => c.author))
+  const sortBy = (key: SortKey) => setSort(s => ({ key, dir: s.key === key ? (s.dir === 'asc' ? 'desc' : 'asc') : key === 'date' ? 'desc' : 'asc' }))
+  const arrow = (key: SortKey) => sort.key === key ? (sort.dir === 'asc' ? ' ↑' : ' ↓') : ''
+  const ariaSort = (key: SortKey) => sort.key === key ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'
+  const anyFilter = q || st || ty || mod || au
+  const clear = () => { setQ(''); setSt(''); setTy(''); setMod(''); setAu('') }
+  const sel = all.find(c => c.sha === open)
 
   return <>
     <header><div><h1>Commits</h1>
@@ -57,23 +74,40 @@ export function CommitsView() {
         <select id="c-type" value={ty} onChange={e => setTy(e.target.value)}>
           <option value="">Todos los tipos</option>{types.map(t => <option key={t} value={t}>{TYPES[t] ?? t}</option>)}
         </select>
-        <select id="c-status" value={st} onChange={e => setSt(e.target.value)}>
+        <select id="c-module" value={mod} onChange={e => setMod(e.target.value)} aria-label="Módulo">
+          <option value="">Todos los módulos</option>{modules.map(m => <option key={m} value={m}>{m === '—' ? 'Sin módulo' : m}</option>)}
+        </select>
+        <select id="c-author" value={au} onChange={e => setAu(e.target.value)} aria-label="Autor">
+          <option value="">Todos los autores</option>{authors.map(a => <option key={a} value={a}>{a}</option>)}
+        </select>
+        <select id="c-status" value={st} onChange={e => setSt(e.target.value)} aria-label="Estado">
           <option value="">Todos los estados</option>{STATES.map(s => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}
         </select>
+        <select id="c-sort" value={`${sort.key}-${sort.dir}`} aria-label="Ordenar"
+          onChange={e => { const [key, dir] = e.target.value.split('-') as [SortKey, 'asc' | 'desc']; setSort({ key, dir }) }}>
+          <option value="date-desc">Más recientes primero</option><option value="date-asc">Más antiguos primero</option>
+          <option value="name-asc">Nombre A → Z</option><option value="name-desc">Nombre Z → A</option>
+        </select>
+        {anyFilter && <button className="link" onClick={clear}>Limpiar filtros</button>}
       </div>
       <div className="tablewrap"><table className="commits">
-        <thead><tr><th>Fecha</th><th>De qué trata</th><th>Descripción</th><th>Autor</th><th>Estado</th><th>SHA</th></tr></thead>
-        <tbody>{list.map(c => <tr key={c.sha} onClick={() => setOpen(open === c.sha ? null : c.sha)}>
+        <thead><tr>
+          <th aria-sort={ariaSort('date')}><button className="th" onClick={() => sortBy('date')}>Fecha{arrow('date')}</button></th>
+          <th>De qué trata</th>
+          <th aria-sort={ariaSort('name')}><button className="th" onClick={() => sortBy('name')}>Descripción{arrow('name')}</button></th>
+          <th>Autor</th><th>Estado</th><th>SHA</th></tr></thead>
+        <tbody>{list.map(c => <tr key={c.sha} tabIndex={0} onClick={() => setOpen(c.sha)} onKeyDown={e => e.key === 'Enter' && setOpen(c.sha)}>
           <td className="nowrap num">{when(c.date)}</td>
           <td><span className={`type t-${c.type}`}>{TYPES[c.type] ?? c.type}</span>{c.scope && <div className="scope">{c.scope}</div>}</td>
-          <td className="desc"><div>{c.subject}</div>{c.body && <small className={open === c.sha ? '' : 'clamp'}>{c.body}</small>}</td>
+          <td className="desc"><div>{c.subject}</div>{c.body && <small className="clamp">{c.body}</small>}</td>
           <td className="nowrap">{c.author}</td>
           <td><span className={`status s-${c.status}`} title={c.branches.length ? `En: ${c.branches.join(', ')}` : 'Aún no está en DEV, QA, main ni PROD'}>{STATUS_LABEL[c.status]}</span></td>
           <td className="num sha">{c.sha.slice(0, 7)}</td>
         </tr>)}</tbody>
       </table></div>
       {!list.length && <p className="empty">Ningún commit coincide con los filtros.</p>}
-      <p className="hint">Mostrando {list.length} de {all.length}. Toca una fila para ver la descripción completa.</p>
+      {sel && <CommitModal c={sel} repo={set.repo} onClose={() => setOpen(null)} />}
+      <p className="hint">Mostrando {list.length} de {all.length}. Toca una fila para ver el detalle completo.</p>
     </>}
   </>
 }
@@ -102,5 +136,71 @@ export function ThemeSwitch() {
   return <div className="themes" role="group" aria-label="Tema">
     {([['light', 'Claro'], ['dark', 'Oscuro'], ['system', 'Sistema']] as [Theme, string][]).map(([k, l]) =>
       <button key={k} className={t === k ? 'on' : ''} aria-pressed={t === k} onClick={() => setT(k)}>{l}</button>)}
+  </div>
+}
+
+/* ---- Detalle del commit ---- */
+const PIPE = ['DEV', 'QA', 'main', 'PROD'] as const
+function CommitModal({ c, repo, onClose }: { c: Commit; repo: string; onClose: () => void }) {
+  const [copied, setCopied] = useState(false)
+  useEffect(() => {
+    const k = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
+    window.addEventListener('keydown', k); return () => window.removeEventListener('keydown', k)
+  }, [onClose])
+  const copy = () => navigator.clipboard?.writeText(c.sha).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500) }).catch(() => {})
+  const url = `https://github.com/${repo}/commit/${c.sha}`
+  const [deploy, setDeploy] = useState(false), [cmdCopied, setCmdCopied] = useState(false)
+  const cmds = `git fetch origin\ngit switch PROD\ngit pull --ff-only origin PROD\ngit cherry-pick ${c.sha}\ngit push origin PROD`
+  const copyCmds = () => navigator.clipboard?.writeText(cmds).then(() => { setCmdCopied(true); setTimeout(() => setCmdCopied(false), 1500) }).catch(() => {})
+  return <div className="overlay" onClick={onClose}>
+    <div className="modal" role="dialog" aria-modal="true" aria-labelledby="cm-title" onClick={e => e.stopPropagation()}>
+      <div className="m-head">
+        <div>
+          <div className="m-eyebrow"><span className={`type t-${c.type}`}>{TYPES[c.type] ?? c.type}</span>{c.scope && <> · {c.scope}</>}</div>
+          <h2 id="cm-title">{c.subject}</h2>
+        </div>
+        <button className="icon" aria-label="Cerrar" onClick={onClose}>×</button>
+      </div>
+
+      <dl className="m-grid">
+        <div><dt>Estado</dt><dd><span className={`status s-${c.status}`}>{STATUS_LABEL[c.status]}</span></dd></div>
+        <div><dt>Autor</dt><dd>{c.author}</dd></div>
+        <div><dt>Fecha</dt><dd className="num">{when(c.date)}</dd></div>
+        <div><dt>Commit</dt><dd className="sha-row"><code>{c.sha.slice(0, 10)}</code><button className="link" onClick={copy}>{copied ? 'Copiado' : 'Copiar SHA'}</button></dd></div>
+      </dl>
+
+      <section className="m-sec">
+        <h3>Recorrido por ambientes</h3>
+        <ol className="pipe">{PIPE.map(e => {
+          const on = c.branches.includes(e)
+          return <li key={e} className={on ? 'on' : ''}><span className="dotp" />{STATUS_LABEL[e]}<small>{on ? 'Incluido' : 'No incluido'}</small></li>
+        })}</ol>
+        {!c.branches.length && <p className="hint">Este cambio todavía está solo en su rama de trabajo.</p>}
+      </section>
+
+      <section className="m-sec">
+        <h3>Descripción del cambio</h3>
+        {c.body ? <p className="m-body">{c.body}</p> : <p className="hint">El commit no tiene descripción adicional.</p>}
+      </section>
+
+      {deploy && <section className="m-sec deploy">
+        <h3>Pasar a producción</h3>
+        <p className="hint">Aplica solo este commit sobre la rama PROD. Ejecuta los comandos en tu clon de Core Plus; si hay conflictos, git se detiene antes del push.</p>
+        <pre className="cmd">{cmds}</pre>
+        <div className="inline">
+          <button className="primary" onClick={copyCmds}>{cmdCopied ? 'Comandos copiados' : 'Copiar comandos'}</button>
+          <a className="btnlink" href={`https://github.com/${repo}/compare/PROD...${c.sha}`} target="_blank" rel="noopener noreferrer">Comparar con PROD en GitHub</a>
+          <button onClick={() => setDeploy(false)}>Cancelar</button>
+        </div>
+      </section>}
+
+      <div className="m-foot">
+        <a href={url} target="_blank" rel="noopener noreferrer">Ver en GitHub</a>
+        <span className="inline">
+          {c.status !== 'PROD' && !deploy && <button className="prod" onClick={() => setDeploy(true)}>Pasar a producción</button>}
+          <button className={c.status === 'PROD' ? 'primary' : ''} onClick={onClose}>Cerrar</button>
+        </span>
+      </div>
+    </div>
   </div>
 }

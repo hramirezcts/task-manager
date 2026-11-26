@@ -2,3 +2,4 @@ node_modules
 dist
 dist-artifact
 commits.json
+dist-artifact/test.html
