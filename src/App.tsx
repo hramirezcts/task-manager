@@ -1,9 +1,10 @@
 import { useState } from 'react'
+import { CommitsView, ThemeSwitch } from './CommitsView'
 import { useData, uid, today, type Data, type Task, type Note, type Process, type Priority, type Status } from './store'
 
-type View = 'dia' | 'tareas' | 'notas' | 'procesos'
+type View = 'dia' | 'tareas' | 'notas' | 'procesos' | 'commits'
 type Up = (fn: (d: Data) => Data) => void
-const VIEWS: [View, string][] = [['dia', 'Mi día'], ['tareas', 'Tareas'], ['notas', 'Notas'], ['procesos', 'Procesos']]
+const VIEWS: [View, string][] = [['dia', 'Mi día'], ['tareas', 'Tareas'], ['notas', 'Notas'], ['procesos', 'Procesos'], ['commits', 'Commits']]
 const fmt = (d: string) => d ? new Date(d + 'T00:00').toLocaleDateString('es', { day: '2-digit', month: 'short' }) : ''
 
 export default function App() {
@@ -32,6 +33,7 @@ export default function App() {
           </button>)}
         </nav>
         <div className="foot">
+          <ThemeSwitch />
           <button className="link" onClick={exportar}>Exportar respaldo</button>
           <label className="link">Importar respaldo
             <input type="file" accept=".json" hidden onChange={e => importar(e.target.files?.[0])} /></label>
@@ -46,6 +48,7 @@ export default function App() {
         {view === 'tareas' && <Tasks data={data} update={update} />}
         {view === 'notas' && <Notes data={data} update={update} />}
         {view === 'procesos' && <Processes data={data} update={update} />}
+        {view === 'commits' && <CommitsView />}
       </main>
     </div>
   )

@@ -1,13 +1,14 @@
 {
   "name": "task-manager",
   "private": true,
-  "version": "1.0.1",
+  "version": "1.1.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "build:artifact": "tsc -b && vite build -c vite.artifact.config.ts && node scripts/artifact.mjs && cp assets/thumb.jpg dist-artifact/"
+    "build:artifact": "tsc -b && vite build -c vite.artifact.config.ts && node scripts/artifact.mjs && cp assets/thumb.jpg dist-artifact/",
+    "sync:commits": "node scripts/sync-commits.mjs \"../PROYECTO COREPLUS-VITE\""
   },
   "dependencies": {
     "react": "^18.3.1",

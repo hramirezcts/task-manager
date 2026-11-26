@@ -41,6 +41,8 @@ async function save(data: Data) {
 export const uid = () => crypto.randomUUID()
 export const today = () => new Date().toLocaleDateString('en-CA')
 
+export let sharedDb: any = null
+
 /* ---- Backend en claude.ai (Artifact): un documento privado por registro ---- */
 type Rec = Record<string, unknown>
 interface Remote { put(k: string, v: Rec): void; del(k: string): void }
@@ -51,6 +53,7 @@ async function remote(): Promise<{ data: Data; api: Remote } | null> {
   const timeout = new Promise<null>(r => setTimeout(() => r(null), 10000))
   const [db, user] = await Promise.race([Promise.all([c.use('db'), c.use('user')]), timeout.then(() => [null, null])]) as any[]
   if (!db || !user) return null
+  sharedDb = db
   const col = db.collection('data/users/' + (await user.id()))
   const snap = await col.get()
   const data: Data = { tasks: [], notes: [], processes: [], journal: [] }
