@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "build:artifact": "tsc -b && vite build -c vite.artifact.config.ts && node scripts/artifact.mjs"
+    "build:artifact": "tsc -b && vite build -c vite.artifact.config.ts && node scripts/artifact.mjs && cp assets/thumb.jpg dist-artifact/"
   },
   "dependencies": {
     "react": "^18.3.1",
