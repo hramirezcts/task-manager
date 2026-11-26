@@ -37,3 +37,26 @@ export async function fetchLive(token: string, author: string): Promise<CommitSe
   const commits = [...map.values()].map(c => ({ ...c, status: statusOf(c.branches) })).sort((a, b) => b.date.localeCompare(a.date))
   return { repo: REPO, syncedAt: new Date().toISOString(), commits }
 }
+
+/* ---- Aplicar / reversar con la GitHub Action apply-commits.yml ---- */
+export const WORKFLOW = 'apply-commits.yml'
+export type Op = 'aplicar' | 'reversar'
+export interface Run { id: number; status: string; conclusion: string | null; html_url: string }
+const gh = (token: string) => ({ Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json' })
+
+export async function dispatchApply(token: string, repo: string, env: string, op: Op, shas: string[]): Promise<number> {
+  const since = Date.now() - 5000
+  const r = await fetch(`https://api.github.com/repos/${repo}/actions/workflows/${WORKFLOW}/dispatches`, {
+    method: 'POST', headers: gh(token), body: JSON.stringify({ ref: 'main', inputs: { env, action: op, shas: shas.join(' ') } }),
+  })
+  if (r.status === 404) throw new Error('No se encontró el workflow apply-commits.yml en main, o el token no tiene permiso de Actions.')
+  if (r.status === 403 || r.status === 401) throw new Error('El token no tiene permiso para ejecutar Actions (Actions: Read and write).')
+  if (!r.ok) throw new Error(`GitHub respondió ${r.status}.`)
+  return since
+}
+export async function latestRun(token: string, repo: string, since: number): Promise<Run | null> {
+  const r = await fetch(`https://api.github.com/repos/${repo}/actions/workflows/${WORKFLOW}/runs?event=workflow_dispatch&per_page=5`, { headers: gh(token) })
+  if (!r.ok) return null
+  const runs = (await r.json()).workflow_runs as (Run & { created_at: string })[]
+  return runs.find(x => Date.parse(x.created_at) >= since) ?? null
+}

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { sharedDb, isAdmin } from './store'
+import { ApplyAction } from './ApplyAction'
 import { fetchLive, TYPES, ENVS, type CommitSet, type Commit } from './commits'
 
 const LS = 'tm-github'
@@ -57,6 +58,7 @@ export function CommitsView() {
   const anyFilter = q || st || ty || mod || au || pro
   const clear = () => { setQ(''); setSt(''); setTy(''); setMod(''); setAu(''); setPro('') }
   const sel = all.find(c => c.sha === open)
+  const admin = isAdmin || !sharedDb
   const toggle = (sha: string) => setPicked(p => { const n = new Set(p); n.has(sha) ? n.delete(sha) : n.add(sha); return n })
   const allPicked = list.length > 0 && list.every(c => picked.has(c.sha))
   const toggleAll = () => setPicked(p => { const n = new Set(p); list.forEach(c => allPicked ? n.delete(c.sha) : n.add(c.sha)); return n })
@@ -101,7 +103,7 @@ export function CommitsView() {
         </select>
         {anyFilter && <button className="link" onClick={clear}>Limpiar filtros</button>}
       </div>
-      {picked.size > 0 && <div className="bulkbar">
+      {admin && picked.size > 0 && <div className="bulkbar">
         <span><b>{picked.size}</b> seleccionado(s)</span>
         <span className="inline">
           <button onClick={() => setBulk('QA')}>Aplicar en QA</button>
@@ -109,7 +111,7 @@ export function CommitsView() {
           <button className="link" onClick={() => setPicked(new Set())}>Quitar selección</button>
         </span>
       </div>}
-      {bulk && <BulkModal env={bulk} commits={all.filter(c => picked.has(c.sha))} onClose={() => setBulk(null)} />}
+      {bulk && <BulkModal env={bulk} repo={set.repo} commits={all.filter(c => picked.has(c.sha))} onClose={() => setBulk(null)} />}
       <div className="tablewrap"><table className="commits">
         <thead><tr>
           <th className="chk"><input type="checkbox" aria-label="Seleccionar todos los visibles" checked={allPicked} onChange={toggleAll} /></th>
@@ -137,7 +139,7 @@ export function CommitsView() {
 function TokenForm({ onSave }: { onSave: (c: { token: string; author: string }) => void }) {
   const [token, setToken] = useState(''), [author, setAuthor] = useState('hramirezcts')
   return <form className="tokenform" onSubmit={e => { e.preventDefault(); if (token.trim()) onSave({ token: token.trim(), author: author.trim() }) }}>
-    <p>Para leer los commits de Core Plus (repositorio privado) crea un token de GitHub de <b>solo lectura</b> (Fine-grained, permiso <i>Contents: Read</i> sobre core-plus-vite) y pégalo aquí. Se guarda solo en este navegador.</p>
+    <p>Para leer los commits de Core Plus crea un token de GitHub Fine-grained sobre core-plus-vite con <i>Contents: Read</i>. Si eres administrador y quieres aplicar o reversar desde aquí, agrega <i>Actions: Read and write</i>. Pégalo aquí; Se guarda solo en este navegador.</p>
     <div className="inline">
       <input id="gh-token" type="password" placeholder="Token de GitHub" value={token} onChange={e => setToken(e.target.value)} />
       <input id="gh-author" placeholder="Usuario de GitHub" value={author} onChange={e => setAuthor(e.target.value)} />
@@ -171,7 +173,7 @@ function CommitModal({ c, repo, onClose }: { c: Commit; repo: string; onClose: (
   }, [onClose])
   const copy = () => navigator.clipboard?.writeText(c.sha).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500) }).catch(() => {})
   const url = `https://github.com/${repo}/commit/${c.sha}`
-  const [deploy, setDeploy] = useState(false), [cmdCopied, setCmdCopied] = useState(false)
+  const [deploy, setDeploy] = useState(false)
   const [revert, setRevert] = useState(false), [revEnv, setRevEnv] = useState(c.branches[0] ?? 'DEV')
   const admin = isAdmin || !sharedDb
   const revCmds = `git fetch origin
@@ -179,9 +181,7 @@ git switch ${revEnv}
 git pull --ff-only origin ${revEnv}
 git revert --no-edit ${c.sha}
 git push origin ${revEnv}`
-  const copyRev = () => navigator.clipboard?.writeText(revCmds).then(() => { setCmdCopied(true); setTimeout(() => setCmdCopied(false), 1500) }).catch(() => {})
   const cmds = `git fetch origin\ngit switch PROD\ngit pull --ff-only origin PROD\ngit cherry-pick ${c.sha}\ngit push origin PROD`
-  const copyCmds = () => navigator.clipboard?.writeText(cmds).then(() => { setCmdCopied(true); setTimeout(() => setCmdCopied(false), 1500) }).catch(() => {})
   return <div className="overlay" onClick={onClose}>
     <div className="modal" role="dialog" aria-modal="true" aria-labelledby="cm-title" onClick={e => e.stopPropagation()}>
       <div className="m-head">
@@ -215,33 +215,26 @@ git push origin ${revEnv}`
 
       {deploy && <section className="m-sec deploy">
         <h3>Pasar a producción</h3>
-        <p className="hint">Aplica solo este commit sobre la rama PROD. Ejecuta los comandos en tu clon de Core Plus; si hay conflictos, git se detiene antes del push.</p>
-        <pre className="cmd">{cmds}</pre>
-        <div className="inline">
-          <button className="primary" onClick={copyCmds}>{cmdCopied ? 'Comandos copiados' : 'Copiar comandos'}</button>
-          <a className="btnlink" href={`https://github.com/${repo}/compare/PROD...${c.sha}`} target="_blank" rel="noopener noreferrer">Comparar con PROD en GitHub</a>
-          <button onClick={() => setDeploy(false)}>Cancelar</button>
-        </div>
+        <p className="hint">Aplica solo este commit sobre la rama PROD. Si hay conflicto, se cancela sin publicar nada. <a href={`https://github.com/${repo}/compare/PROD...${c.sha}`} target="_blank" rel="noopener noreferrer">Comparar con PROD</a></p>
+        <ApplyAction repo={repo} env="PROD" op="aplicar" shas={[c.sha]} commands={cmds} />
+        <button className="link" onClick={() => setDeploy(false)}>Cancelar</button>
       </section>}
 
       {revert && <section className="m-sec deploy danger-box">
         <h3>Reversar cambio</h3>
-        <p className="hint">Crea un commit nuevo que deshace este cambio en el ambiente elegido. No borra historial. Ejecuta los comandos en tu clon de Core Plus.</p>
+        <p className="hint">Crea un commit nuevo que deshace este cambio en el ambiente elegido. No borra historial.</p>
         <label className="inline">Ambiente
           <select id="rev-env" value={revEnv} onChange={e => setRevEnv(e.target.value)}>{c.branches.map(b => <option key={b} value={b}>{STATUS_LABEL[b]}</option>)}</select>
         </label>
-        <pre className="cmd">{revCmds}</pre>
-        <div className="inline">
-          <button className="danger-solid" onClick={copyRev}>{cmdCopied ? 'Comandos copiados' : 'Copiar comandos'}</button>
-          <button onClick={() => setRevert(false)}>Cancelar</button>
-        </div>
+        <ApplyAction key={revEnv} repo={repo} env={revEnv} op="reversar" shas={[c.sha]} commands={revCmds} />
+        <button className="link" onClick={() => setRevert(false)}>Cancelar</button>
       </section>}
 
       <div className="m-foot">
         <a href={url} target="_blank" rel="noopener noreferrer">Ver en GitHub</a>
         <span className="inline">
           {admin && c.branches.length > 0 && !revert && <button className="danger" onClick={() => { setRevert(true); setDeploy(false) }}>Reversar</button>}
-          {c.status !== 'PROD' && !deploy && <button className="prod" onClick={() => { setDeploy(true); setRevert(false) }}>Pasar a producción</button>}
+          {admin && c.status !== 'PROD' && !deploy && <button className="prod" onClick={() => { setDeploy(true); setRevert(false) }}>Pasar a producción</button>}
           <button className={c.status === 'PROD' ? 'primary' : ''} onClick={onClose}>Cerrar</button>
         </span>
       </div>
@@ -250,8 +243,7 @@ git push origin ${revEnv}`
 }
 
 /* ---- Aplicación masiva a QA o Producción ---- */
-function BulkModal({ env, commits, onClose }: { env: 'QA' | 'PROD'; commits: Commit[]; onClose: () => void }) {
-  const [copied, setCopied] = useState(false)
+function BulkModal({ env, repo, commits, onClose }: { env: 'QA' | 'PROD'; repo: string; commits: Commit[]; onClose: () => void }) {
   useEffect(() => {
     const k = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
     window.addEventListener('keydown', k); return () => window.removeEventListener('keydown', k)
@@ -262,7 +254,6 @@ function BulkModal({ env, commits, onClose }: { env: 'QA' | 'PROD'; commits: Com
   const label = STATUS_LABEL[env]
   const cmds = ['git fetch origin', `git switch ${env}`, `git pull --ff-only origin ${env}`,
     `git cherry-pick ${todo.map(c => c.sha).join(' ')}`, `git push origin ${env}`].join('\n')
-  const copy = () => navigator.clipboard?.writeText(cmds).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500) }).catch(() => {})
   return <div className="overlay" onClick={onClose}>
     <div className="modal" role="dialog" aria-modal="true" aria-labelledby="bm-title" onClick={e => e.stopPropagation()}>
       <div className="m-head">
@@ -277,16 +268,13 @@ function BulkModal({ env, commits, onClose }: { env: 'QA' | 'PROD'; commits: Com
         {already.length > 0 && <p className="hint">{already.length} seleccionado(s) ya están en {label} y se omiten.</p>}
       </section>
       {todo.length > 0 && <section className="m-sec deploy">
-        <h3>Comandos</h3>
-        <p className="hint">Ejecútalos en tu clon de Core Plus. Si un commit tiene conflicto, git se detiene: resuélvelo y sigue con <code>git cherry-pick --continue</code>, o cancela con <code>git cherry-pick --abort</code>.</p>
-        <pre className="cmd">{cmds}</pre>
+        <h3>Aplicar</h3>
+        <p className="hint">Se aplican en ese orden. Si alguno tiene conflicto, se cancela todo y no se publica nada.</p>
+        <ApplyAction repo={repo} env={env} op="aplicar" shas={todo.map(c => c.sha)} commands={cmds} />
       </section>}
       <div className="m-foot">
         <span />
-        <span className="inline">
-          <button onClick={onClose}>Cerrar</button>
-          {todo.length > 0 && <button className={env === 'PROD' ? 'prod' : 'primary'} onClick={copy}>{copied ? 'Comandos copiados' : 'Copiar comandos'}</button>}
-        </span>
+        <button onClick={onClose}>Cerrar</button>
       </div>
     </div>
   </div>

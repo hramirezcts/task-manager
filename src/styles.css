@@ -109,3 +109,4 @@ table.commits{width:100%;border-collapse:collapse;font-size:13px}
 .bulklist{margin:0;padding-left:22px;display:flex;flex-direction:column;gap:8px;max-height:280px;overflow:auto}
 .bulklist li{display:grid;grid-template-columns:auto 1fr;column-gap:10px}.bulklist code{font-family:ui-monospace,Consolas,monospace;color:var(--muted)}
 .bulklist small{grid-column:2;color:var(--muted);font-size:12px}
+.apply{display:flex;flex-direction:column;gap:8px;align-items:flex-start}.confirmrow{display:flex;flex-wrap:wrap;gap:8px;align-items:center}.runstate{margin:0;font-size:13px;padding:8px 10px;border-radius:6px;border:1px solid var(--line)}.runstate.ok{border-color:var(--green);color:var(--green)}.runstate.bad{border-color:var(--red);color:var(--red)}.runstate.run{color:var(--muted)}.manual summary{cursor:pointer;color:var(--muted);font-size:12px}.manual .cmd{margin-top:6px}
