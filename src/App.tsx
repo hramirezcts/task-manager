@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { CommitsView, ThemeSwitch } from './CommitsView'
 import { useData, uid, today, type Data, type Task, type Note, type Process, type Priority, type Status } from './store'
 
@@ -9,7 +9,10 @@ const fmt = (d: string) => d ? new Date(d + 'T00:00').toLocaleDateString('es', {
 
 export default function App() {
   const { data, mode, update, replace } = useData()
-  const [view, setView] = useState<View>('dia')
+  const fromHash = () => { const h = location.hash.slice(1) as View; return VIEWS.some(([k]) => k === h) ? h : 'dia' }
+  const [view, setViewState] = useState<View>(fromHash)
+  const setView = (v: View) => { setViewState(v); if (location.hash !== '#' + v) history.replaceState(null, '', '#' + v) }
+  useEffect(() => { const on = () => setViewState(fromHash()); addEventListener('hashchange', on); return () => removeEventListener('hashchange', on) }, [])
   const [pending, setPending] = useState<Data | null>(null)
   if (!data) return <div className="loading">Cargando tus tareas…</div>
   const open = data.tasks.filter(t => t.status !== 'hecha').length
