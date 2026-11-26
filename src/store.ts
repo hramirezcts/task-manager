@@ -86,17 +86,26 @@ function sync(api: Remote, prev: Data, next: Data) {
 let api: Remote | null = null
 export function useData() {
   const [data, setData] = useState<Data | null>(null)
-  const [mode, setMode] = useState<'nube' | 'local'>('local')
+  const [mode, setMode] = useState<'nube' | 'local' | 'memoria'>('local')
   useEffect(() => {
-    remote().catch(() => null).then(r => {
-      if (r) { api = r.api; setMode('nube'); setData(r.data) } else load().then(setData)
-    })
+    const within = <T,>(p: Promise<T>, ms: number) =>
+      Promise.race([p, new Promise<null>(r => setTimeout(() => r(null), ms))]).catch(() => null)
+    ;(async () => {
+      // claude.ai puede exponer window.claude un poco después del primer render
+      const inArtifact = location.hostname.endsWith('claudeusercontent.com') || location.hostname.includes('claude')
+      for (let i = 0; i < 30 && !window.claude && inArtifact; i++) await new Promise(r => setTimeout(r, 100))
+      const r = await within(remote(), 12000)
+      if (r) { api = r.api; setMode('nube'); setData(r.data); return }
+      const l = await within(load(), 3000)
+      if (l) { setData(l); return }
+      setMode('memoria'); setData({ ...empty })
+    })()
   }, [])
   const update = (fn: (d: Data) => Data) =>
     setData(prev => {
       if (!prev) return prev
       const next = fn(prev)
-      if (api) sync(api, prev, next); else save(next)
+      if (api) sync(api, prev, next); else save(next).catch(() => {})
       return next
     })
   return { data, mode, update, replace: (d: Data) => update(() => ({ ...empty, ...d })) }

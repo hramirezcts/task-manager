@@ -9,7 +9,8 @@ const fmt = (d: string) => d ? new Date(d + 'T00:00').toLocaleDateString('es', {
 export default function App() {
   const { data, mode, update, replace } = useData()
   const [view, setView] = useState<View>('dia')
-  if (!data) return null
+  const [pending, setPending] = useState<Data | null>(null)
+  if (!data) return <div className="loading">Cargando tus tareas…</div>
   const open = data.tasks.filter(t => t.status !== 'hecha').length
 
   const exportar = async () => {
@@ -19,7 +20,6 @@ export default function App() {
     const a = document.createElement('a')
     a.href = URL.createObjectURL(new Blob([json], { type: 'application/json' })); a.download = filename; a.click()
   }
-  const [pending, setPending] = useState<Data | null>(null)
   const importar = (f?: File) => f?.text().then(t => { try { setPending(JSON.parse(t)) } catch { /* archivo inválido */ } })
 
   return (
@@ -38,7 +38,7 @@ export default function App() {
           {pending && <div className="confirmbox">Reemplazar todos los datos con el respaldo?
             <span><button className="danger" onClick={() => { replace(pending); setPending(null) }}>Reemplazar</button>
             <button onClick={() => setPending(null)}>Cancelar</button></span></div>}
-          <small>v{__APP_VERSION__} · {mode === 'nube' ? 'guardado en tu cuenta' : 'guardado en este equipo'}</small>
+          <small>v{__APP_VERSION__} · {mode === 'nube' ? 'guardado en tu cuenta' : mode === 'local' ? 'guardado en este equipo' : 'sin guardado: exporta un respaldo'}</small>
         </div>
       </aside>
       <main>
