@@ -4,6 +4,7 @@ import { ApplyAction } from './ApplyAction'
 import { fetchLive, TYPES, ENVS, type CommitSet, type Commit } from './commits'
 
 const LS = 'tm-github'
+const EMBED = new URLSearchParams(location.search).has('embed') && window.parent !== window
 const read = () => { try { return JSON.parse(localStorage.getItem(LS) || '{}') } catch { return {} } }
 const write = (v: object) => { try { localStorage.setItem(LS, JSON.stringify(v)) } catch { /* sin almacenamiento */ } }
 const STATUS_LABEL: Record<string, string> = { PROD: 'Producción', main: 'main', QA: 'QA', DEV: 'DEV', Rama: 'Solo en rama' }
@@ -29,6 +30,19 @@ export function CommitsView() {
     setBusy(false)
   }
   useEffect(() => {
+    if (EMBED) {
+      // Dentro de Core Plus: Core Plus trae los commits con la sesión del usuario y los envía por mensaje.
+      setBusy(true)
+      const on = (e: MessageEvent) => {
+        if (e.source !== parent || e.data?.type !== 'tm-commits') return
+        const p = e.data.payload
+        if (p?.commits) { setSet(p); setErr('') } else setErr(p?.error || 'No se pudieron cargar los commits.')
+        setBusy(false)
+      }
+      addEventListener('message', on)
+      parent.postMessage({ type: 'tm-ready' }, '*')
+      return () => removeEventListener('message', on)
+    }
     if (sharedDb) {
       setBusy(true)
       sharedDb.doc('commits/latest').get()
@@ -36,6 +50,7 @@ export function CommitsView() {
         .catch(() => setErr('No se pudieron leer los commits.')).finally(() => setBusy(false))
     } else live()
   }, [])
+
 
   const all = set?.commits ?? []
   const list = all.filter(c => (!st || c.status === st) && (!ty || c.type === ty)
@@ -66,10 +81,10 @@ export function CommitsView() {
   return <>
     <header><div><h1>Commits</h1>
       <p>{set ? `${set.repo} · actualizado ${when(set.syncedAt)}` : 'Historial de tus commits y en qué ambiente está cada uno'}</p></div>
-      {!sharedDb && cfg.token && <button onClick={() => live()} disabled={busy}>{busy ? 'Cargando…' : 'Actualizar'}</button>}
+      {!EMBED && !sharedDb && cfg.token && <button onClick={() => live()} disabled={busy}>{busy ? 'Cargando…' : 'Actualizar'}</button>}
     </header>
 
-    {!sharedDb && !cfg.token && <TokenForm onSave={c => { write(c); setCfg(c); live(c) }} />}
+    {!EMBED && !sharedDb && !cfg.token && <TokenForm onSave={c => { write(c); setCfg(c); live(c) }} />}
     {err && <p className="notice">{err}{sharedDb ? ' Pídele a Claude «sincroniza mis commits» para cargarlos.' : ''}</p>}
     {busy && !set && <p className="empty">Cargando commits…</p>}
 
