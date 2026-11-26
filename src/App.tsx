@@ -27,7 +27,7 @@ export default function App() {
   const importar = (f?: File) => f?.text().then(t => { try { setPending(JSON.parse(t)) } catch { /* archivo inválido */ } })
 
   return (
-    <div className="app">
+    <div className={new URLSearchParams(location.search).has('embed') ? 'app embed' : 'app'}>
       <aside>
         <div className="brand">Task Manager</div>
         <nav>{VIEWS.map(([k, l]) =>
